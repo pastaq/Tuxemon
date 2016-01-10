@@ -78,6 +78,10 @@ class COMBAT(state.State):
         .. image:: images/combat/monster_drawing01.png
 
         """
+        self.game.combat_router.startup()
+        event = {"type": "CLIENT_BATTLE_NEW",
+                 "params": params}
+        self.game.combat_router.route(event)
         from core.components import menu
 
         self.players = params["players"]

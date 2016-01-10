@@ -37,17 +37,10 @@ from core.components import player
 # Create a logger for optional handling of debug messages.
 logger = logging.getLogger(__name__)
 
-# Import the android mixer if on the android platform
-try:
-    import pygame.mixer as mixer
-except ImportError:
-    import android.mixer as mixer
-
-
 class Combat(object):
 
     def start_battle(self, game, action):
-        """Start a battle and switch to the combat module. The parameters must contain an NPC id
+        """Start a battle with a specific NPC. The parameters must contain an NPC id
         in the NPC database.
 
         :param game: The main game object that contains all the game's variables.
@@ -68,15 +61,6 @@ class Combat(object):
         ... (u'start_battle', u'1', 1, 9)
 
         """
-        # Don't start a battle if we don't even have monsters in our party yet.
-        if not self.check_battle_legal(game.player1):
-            return False
-
-        # Stop movement and keypress on the server.
-        if game.isclient or game.ishost:
-                game.client.update_player(game.player1.facing, event_type="CLIENT_START_BATTLE")
-
-        # Start combat
         npc_id = int(action[1])
 
         # Create an NPC object that will be used as our opponent
@@ -96,100 +80,7 @@ class Combat(object):
         # Look up the NPC's monster party
         npc_party = npc_details['monsters']
 
-        # Look up the monster's details
-        monsters = db.JSONDatabase()
-        monsters.load("monster")
-
-        # Look up each monster in the NPC's party
-        for npc_monster_details in npc_party:
-            results = monsters.database['monster'][npc_monster_details['monster_id']]
-
-            # Create a monster object for each monster the NPC has in their party.
-            current_monster = monster.Monster()
-            current_monster.load_from_db(npc_monster_details['monster_id'])
-            current_monster.name = npc_monster_details['name']
-            current_monster.monster_id = npc_monster_details['monster_id']
-            current_monster.level = npc_monster_details['level']
-            current_monster.hp = npc_monster_details['hp']
-            current_monster.current_hp = npc_monster_details['hp']
-            current_monster.attack = npc_monster_details['attack']
-            current_monster.defense = npc_monster_details['defense']
-            current_monster.speed = npc_monster_details['speed']
-            current_monster.special_attack = npc_monster_details['special_attack']
-            current_monster.special_defense = npc_monster_details['special_defense']
-            current_monster.experience_give_modifier = npc_monster_details['exp_give_mod']
-            current_monster.experience_required_modifier = npc_monster_details['exp_req_mod']
-
-            current_monster.type1 = results['types'][0]
-
-            current_monster.set_level(current_monster.level)
-
-            if len(results['types']) > 1:
-                current_monster.type2 = results['types'][1]
-
-            current_monster.load_sprite_from_db()
-
-            pound = monster.Technique('Pound')
-
-            current_monster.learn(pound)
-
-            # Add our monster to the NPC's party
-            npc.monsters.append(current_monster)
-
-        # Add our players and setup combat
-        game.push_state("COMBAT", params={
-            'players': (game.player1, npc),
-            'combat_type': "trainer"})
-
-        # Flash the screen before combat
-        game.push_state("FLASH_TRANSITION")
-
-        # Start some music!
-        logger.info("Playing battle music!")
-        filename = "147066_pokemon.ogg"
-
-        mixer.music.load(prepare.BASEDIR + "resources/music/" + filename)
-        mixer.music.play(-1)
-
-
-    def start_pseudo_battle(self, game, npc):
-        """Start a networked duel and switch to the combat module.
-
-        :param game: The main game object that contains all the game's variables.
-        :param npc: The NPC to fight if fighting a specific character.
-
-        :type game: core.control.Control
-        :type npc: core.components.player.Npc
-
-        :rtype: None
-        :returns: None
-        """
-        # Don't start a battle if we don't even have monsters in our party yet.
-        if not self.check_battle_legal(game.player1):
-            return False
-
-        if not self.check_battle_legal(npc):
-            return False
-
-        # Stop movement and keypress on the server.
-        if game.isclient or game.ishost:
-                game.client.update_player(game.player1.facing, event_type="CLIENT_START_BATTLE")
-
-        # Add our players and setup combat
-        game.push_state("COMBAT", params={
-            'players': (game.player1, npc),
-            'combat_type': "trainer"})
-
-        # flash the screen
-        game.push_state("FLASH_TRANSITION")
-
-        # Start some music!
-        logger.info("Playing battle music!")
-        filename = "147066_pokemon.ogg"
-
-        mixer.music.load(prepare.BASEDIR + "resources/music/" + filename)
-        mixer.music.play(-1)
-
+        self.battle_init(game, npc, "trainer", npc_party)
 
     def random_encounter(self, game, action):
         """Randomly starts a battle with a monster defined in the "encounter" table in the
@@ -210,12 +101,6 @@ class Combat(object):
         Valid Parameters: encounter_id
 
         """
-        player1 = game.player1
-
-        # Don't start a battle if we don't even have monsters in our party yet.
-        if not self.check_battle_legal(player1):
-            return False
-
         # Get the parameters to determine what encounter group we'll look up in the database.
         encounter_id = int(action[1])
 
@@ -232,7 +117,7 @@ class Combat(object):
 
         for item in encounters:
             # Perform a roll to see if this monster is going to start a battle.
-            roll = random.randrange(1,1000)
+            roll = random.randrange(1, 1000)
             if roll <= int(item['encounter_rate']):
                 # Set our encounter details
                 encounter = item
@@ -241,10 +126,6 @@ class Combat(object):
         # battle.
         if encounter:
             logger.info("Start battle!")
-
-            # Stop movement and keypress on the server.
-            if game.isclient or game.ishost:
-                game.client.update_player(game.player1.facing, event_type="CLIENT_START_BATTLE")
 
             # Create a monster object
             current_monster = monster.Monster()
@@ -267,25 +148,87 @@ class Combat(object):
             # Set the NPC object's AI model.
             npc.ai = ai.AI()
 
-            # Add our players and setup combat
-            game.push_state("COMBAT", params={
-                'players': (player1, npc),
-                'combat_type': "monster"})
+            self.battle_init(game, npc, "monster")
 
-            # flash the screen
-            game.push_state("FLASH_TRANSITION")
+    def battle_init(self, game, npc, combat_type, npc_party=None):
+        """Starts a battle and switches to the combat module.
 
-            # Start some music!
-            filename = "147066_pokemon.ogg"
-            mixer.music.load(prepare.BASEDIR + "resources/music/" + filename)
-            mixer.music.play(-1)
-            game.current_music["status"] = "playing"
-            game.current_music["song"] = filename
+        :param game: The main game object that contains all the game's variables.
+        :param npc: The NPC to fight if fighting a specific character.
+        :param npc_pary: Used to load monsters for an npc loaded from the database.
 
-            # Stop the player's movement
-            player1.moving = False
-            player1.direction = {'down': False, 'left': False, 'right': False, 'up': False}
+        :type game: core.control.Control
+        :type npc: core.components.player.Npc
+        :type npc_party: dict
 
+        :rtype: None
+        :returns: None
+        """
+        player1 = game.player1
+
+        # Look up each monster in the NPC's party
+        if npc_party:
+            # Look up the monster's details
+            monsters = db.JSONDatabase()
+            monsters.load("monster")
+
+            for npc_monster_details in npc_party:
+                results = monsters.database['monster'][npc_monster_details['monster_id']]
+
+                # Create a monster object for each monster the NPC has in their party.
+                current_monster = monster.Monster()
+                current_monster.load_from_db(npc_monster_details['monster_id'])
+                current_monster.name = npc_monster_details['name']
+                current_monster.monster_id = npc_monster_details['monster_id']
+                current_monster.level = npc_monster_details['level']
+                current_monster.hp = npc_monster_details['hp']
+                current_monster.current_hp = npc_monster_details['hp']
+                current_monster.attack = npc_monster_details['attack']
+                current_monster.defense = npc_monster_details['defense']
+                current_monster.speed = npc_monster_details['speed']
+                current_monster.special_attack = npc_monster_details['special_attack']
+                current_monster.special_defense = npc_monster_details['special_defense']
+                current_monster.experience_give_modifier = npc_monster_details['exp_give_mod']
+                current_monster.experience_required_modifier = npc_monster_details['exp_req_mod']
+
+                current_monster.type1 = results['types'][0]
+
+                current_monster.set_level(current_monster.level)
+
+                if len(results['types']) > 1:
+                    current_monster.type2 = results['types'][1]
+
+                current_monster.load_sprite_from_db()
+
+                pound = monster.Technique('Pound')
+
+                current_monster.learn(pound)
+
+                # Add our monster to the NPC's party
+                npc.monsters.append(current_monster)
+
+        # Don't start a battle if we or the opponent dont even have monsters yet.
+        if not self.check_battle_legal(game.player1):
+            return False
+
+        if not self.check_battle_legal(npc):
+            return False
+
+        # Stop movement and keypress on the server.
+        if game.isclient or game.ishost:
+                game.client.update_player(game.player1.facing, event_type="CLIENT_START_BATTLE")
+
+        # Stop the player's movement
+        player1.moving = False
+        player1.direction = {'down': False, 'left': False, 'right': False, 'up': False}
+
+        event_data={"type":"",
+                    "params": {'players': (player1, npc),
+                              'combat_type': combat_type
+                              }
+                    }
+
+        game.combat_router.route_combat(event_data)
 
     def check_battle_legal(self, player):
         """Checks to see if the player has any monsters fit for battle.
@@ -303,5 +246,5 @@ class Combat(object):
             if player.monsters[0].current_hp <= 0:
                 logger.warning("Cannot start battle, player's monsters are all DEAD")
                 return False
-            else: return True
-
+            else:
+                return True

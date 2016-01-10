@@ -83,7 +83,6 @@ class TuxemonServer():
 
         self.server = NeteriaServer(Multiplayer(self), server_port=40081, server_name=self.server_name)
 
-
     def update(self):
         """Updates the server state with information sent from the clients
 
@@ -108,9 +107,6 @@ class TuxemonServer():
 
             except KeyError:
                 self.server.registry[cuuid]["ping_timestamp"] = datetime.now()
-
-
-
 
     def server_event_handler(self, cuuid, event_data):
         """Handles events sent from the middleware that are legal.

@@ -17,7 +17,7 @@ from .components import networking
 from .components import player
 from .components import pyganim
 from .components import rumble
-#from .components.combat import CombatEngine, CombatRouter
+from .components.combat import CombatEngine, CombatRouter
 from .state import StateManager
 from .tools import android, logger
 
@@ -60,8 +60,8 @@ class Control(StateManager):
         self.client = networking.TuxemonClient(self)
 
         # Set up our combat engine and router.
-#        self.combat_engine = CombatEngine(self)
-#        self.combat_router = CombatRouter(self, self.combat_engine)
+        self.combat_engine = CombatEngine(self)
+        self.combat_router = CombatRouter(self, self.combat_engine)
 
         # Set up our game's configuration from the prepare module.
         self.config = prepare.CONFIG
