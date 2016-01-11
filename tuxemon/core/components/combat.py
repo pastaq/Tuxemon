@@ -41,21 +41,29 @@ class CombatEngine():
         self.matches = {}
         self.game = game
 
+    def set_type(self):
+        try:
+            self.notify_route = self.game.combat_router.handle_response
+        except AttributeError:
+            self.notify_route = self.game.handle_combat_response
+        print self.notify_route
+
     def update(self):
         for match in self.matches:
             match.update()
 
     def add_new_match(self, cuuid, params):
-        self.matches[cuuid] = Match(params)
-        print "self.matches", self.matches
+        self.matches[cuuid] = Match()
+        self.matches[cuuid].startup(params)
 
     def route_combat(self, event, cuuid=None):
         if not cuuid:
             cuuid = self.game.combat_router.cuuid
-        print cuuid, event
-        if event["type"] == ["CLIENT_BATTLE_NEW"]:
-            self.add_new_match(event["params"])
-
+        if event["type"] == "CLIENT_BATTLE_NEW":
+            self.add_new_match(cuuid, event["params"])
+            event_data={"type":"NOTIFY_CLIENT_BATTLE_NEW",
+                        "params": event["params"]}
+            self.notify_route(cuuid, event_data)
 
 class Match():
     """The Match class executes as a single match between opponents.
@@ -79,7 +87,7 @@ class Match():
         self.phase = "decision phase"  # The current state of combat.
 
     def update(self, time_delta):
-        pass
+        print(time_delta)
 
     def start_decision_phase(self):
         """Once actions have been completed, this function will re-enable player input to allow the
@@ -92,7 +100,6 @@ class Match():
 
         """
         pass
-
 
     def start_action_phase(self):
         """After both players have input an action, this function will pause all player input and
@@ -152,11 +159,6 @@ class Match():
         pass
 
 
-# Import the android mixer if on the android platform
-try:
-    import pygame.mixer as mixer
-except ImportError:
-    import android.mixer as mixer
 
 class CombatRouter():
     """The CombatRouter receives inputs from the local player and sends
@@ -172,6 +174,13 @@ class CombatRouter():
         self.cuuid = str(self.game.client.client.cuuid)
         self.game_type = ""
 
+        # Import the android mixer if on the android platform
+        try:
+            import pygame.mixer as mixer
+        except ImportError:
+            import android.mixer as mixer
+        self.mixer = mixer
+
     def startup(self):
         if self.game.ishost or self.game.isclient:
             self.game_type = "NETWORK"
@@ -186,11 +195,7 @@ class CombatRouter():
         pass
 
     def route_combat(self, event_data):
-        if self.game_type == "NETWORK:
-            self.game.client.route_combat(event_data)
-
-        elif self.game_type == "LOCAL":
-            self.combat_engine.route_combat(event_data)
+        self.combat_engine.route_combat(event_data)
 
     def start_combat(self, params):
         # Add our players and setup combat
@@ -203,5 +208,10 @@ class CombatRouter():
         logger.info("Playing battle music!")
         filename = "147066_pokemon.ogg"
 
-        mixer.music.load(prepare.BASEDIR + "resources/music/" + filename)
-        mixer.music.play(-1)
+        self.mixer.music.load(prepare.BASEDIR + "resources/music/" + filename)
+        self.mixer.music.play(-1)
+
+    def handle_response(self, cuuid, event_data):
+        if event_data["type"] == "NOTIFY_CLIENT_BATTLE_NEW":
+            print event_data["params"]
+            self.start_combat(event_data["params"])

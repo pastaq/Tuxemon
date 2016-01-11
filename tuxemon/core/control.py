@@ -62,7 +62,7 @@ class Control(StateManager):
         # Set up our combat engine and router.
         self.combat_engine = CombatEngine(self)
         self.combat_router = CombatRouter(self, self.combat_engine)
-
+        self.combat_engine.set_type()
         # Set up our game's configuration from the prepare module.
         self.config = prepare.CONFIG
 

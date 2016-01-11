@@ -222,7 +222,7 @@ class Combat(object):
         player1.moving = False
         player1.direction = {'down': False, 'left': False, 'right': False, 'up': False}
 
-        event_data={"type":"",
+        event_data={"type":"CLIENT_BATTLE_NEW",
                     "params": {'players': (player1, npc),
                               'combat_type': combat_type
                               }
