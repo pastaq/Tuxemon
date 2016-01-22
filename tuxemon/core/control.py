@@ -17,7 +17,7 @@ from .components import networking
 from .components import player
 from .components import pyganim
 from .components import rumble
-from .components.combat import CombatEngine, CombatRouter
+from .components.combat import CombatEngine, EventRouter
 from .state import StateManager
 from .tools import android, logger
 
@@ -61,7 +61,7 @@ class Control(StateManager):
 
         # Set up our combat engine and router.
         self.combat_engine = CombatEngine(self)
-        self.combat_router = CombatRouter(self, self.combat_engine)
+        self.event_router = EventRouter(self)
         self.combat_engine.set_type()
         # Set up our game's configuration from the prepare module.
         self.config = prepare.CONFIG
@@ -477,7 +477,7 @@ class Control(StateManager):
         # Run our event engine which will check to see if game conditions.
         # are met and run an action associated with that condition.
         self.event_loop()
-#        self.combat_router.update()
+        self.event_router.update()
 
         # Run our event engine which will check to see if game conditions
         # are met and run an action associated with that condition.

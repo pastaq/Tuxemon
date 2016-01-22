@@ -29,13 +29,13 @@
 #
 
 import logging
-
+import uuid
 from core import prepare
 
 logger = logging.getLogger(__name__)
 class CombatEngine():
     """The CombatEngine class manages the matches and returns results of
-    actions to the CombatRouter class.
+    actions to the local EventRouter or networked client.
     """
     def __init__(self, game):
         self.matches = {}
@@ -43,22 +43,24 @@ class CombatEngine():
 
     def set_type(self):
         try:
-            self.notify_route = self.game.combat_router.handle_response
+            self.notify_route = self.game.event_router.handle_response
+            self.engine_type = "CLIENT"
         except AttributeError:
             self.notify_route = self.game.handle_combat_response
-        print self.notify_route
+            self.engine_type = "SERVER"
+        logger.info("Combat engine started as", self.engine_type)
 
     def update(self):
         for match in self.matches:
             match.update()
 
     def add_new_match(self, cuuid, params):
-        self.matches[cuuid] = Match()
-        self.matches[cuuid].startup(params)
+        self.matches[cuuid] = Match(params)
 
     def route_combat(self, event, cuuid=None):
         if not cuuid:
-            cuuid = self.game.combat_router.cuuid
+            self.cuuid = str(self.game.client.client.cuuid)
+
         if event["type"] == "CLIENT_BATTLE_NEW":
             self.add_new_match(cuuid, event["params"])
             event_data={"type":"NOTIFY_CLIENT_BATTLE_NEW",
@@ -68,14 +70,10 @@ class CombatEngine():
 class Match():
     """The Match class executes as a single match between opponents.
     """
-    def startup(self, params=None):
+    def __init__(self, params):
         self.players = params["players"]
         self.combat_type = params["combat_type"]         # Can be either "monster" or "trainer"
 
-        self.current_players = {'player': {}, 'opponent': {}}
-        # If we detected the players' health change, we need to animate it.
-        self.current_players['player']['health_changed'] = False
-        self.current_players['opponent']['health_changed'] = False
         # This is used to pause input from all players while actions are taking place.
         self.turn_in_progress = False
         self.status_check_in_progress = False   # Used to pause input during status check.
@@ -84,10 +82,50 @@ class Match():
         # Keep track of the combat phases
         self.decision_phase = True     # The decision phase allows each player to select an action.
         self.action_phase = False      # The action phase resolves the actions that each player took.
+
         self.phase = "decision phase"  # The current state of combat.
+
+        def set_xp(players):
+            for player in players:
+                mons = player.monsters[0]
+                # Leveling is based off of total experience, so we need to do a bit of calculation
+                # to get the percentage of experience needed for the current level.
+                player.zero_xp = mons.experience_required_modifier * mons.level ** 3
+                player.full_xp = mons.experience_required_modifier * (mons.level + 1) ** 3
+                player.level_xp = mons.total_experience - player.zero_xp
+                player.max_xp = player.full_xp - player.zero_xp
+                player.current_xp = player.level_xp / float(player.max_xp)
+                logger.info("Current XP: %s / %s" % (player.level_xp, player.max_xp))
+                player.monster_last_hp = mons.current_hp
+
+        print self.players
+        set_xp(self.players)
+        print self.players
+
+    def startup(self, params=None):
+        pass
 
     def update(self, time_delta):
         print(time_delta)
+        player1_dict =  self.current_players['player1']
+        player2_dict =  self.current_players['player2']
+
+        # If a player has an AI associated with it, execute that AI's decision
+        # function
+
+        if player1_dict['player'].ai and not player1_dict['action']:
+            player1_dict['action'] = player1_dict['player'].ai.make_decision(
+                player1_dict,
+                player2_dict)
+
+        if player2_dict['player'].ai and not player2_dict['action']:
+            player2_dict['action'] = player2_dict['player'].ai.make_decision(
+                player2_dict,
+                player1_dict)
+
+        # If both players have selected an action, start the action phase.
+        if player1_dict['action'] and player2_dict['action']:
+            self.start_action_phase()
 
     def start_decision_phase(self):
         """Once actions have been completed, this function will re-enable player input to allow the
@@ -111,18 +149,60 @@ class Match():
         :returns: None
 
         """
-        pass
+
+        # This will be executed when both players have selected an action.
+        self.action_phase = True
+        self.decision_phase = False
+        self.phase = "action phase"
+        players = self.current_players
+
+        # Create a list of players ordered by who will go first.
+        self.turn_order = []
+
+        # Determine which monster goes first based on the speed of the monsters.
+        if players['player1']['monster'].speed >= players['player2']['monster'].speed:
+            self.turn_order.append(players['player1'])
+            self.turn_order.append(players['player2'])
+        else:
+            self.turn_order.append(players['player2'])
+            self.turn_order.append(players['player1'])
 
     def action_phase_update(self):
         """Updates the game every frame during the action phase.
         """
-        pass
+        # If we're in the action phase, but an action is not actively being carried out, start
+        # the next player's action.
+        if not self.turn_in_progress:
+            self.start_turn()
 
+        # If an action IS actively being carried out, draw the animations for the action.
+        else:
+            self.turn_update()
+
+        # If all turns have been taken, start the decision phase.
+        if len(self.turn_order) == 0:
+            self.start_decision_phase()
 
     def start_turn(self):
         """Starts a turn for a monster during the action phase.
         """
-        pass
+        logger.info("")
+        logger.info("Starting turn for " + self.turn_order[0]['player'].name)
+        if not self.status_check_in_progress and not self.status_check_completed:
+            logger.info("  Performing status check and resolving damage from status.")
+            self.status_check(self.turn_order[0])
+            self.status_check_in_progress = True
+            self.status_check_completed = False
+            self.phase = "status check in progress"
+
+        # We want to perform our action AFTER the status check has completed.
+        elif self.status_check_completed:
+            logger.info("  Status check completed. Performing action.")
+            self.perform_action(self.turn_order[0])
+            self.status_check_in_progress = False
+            self.status_check_completed = False
+
+        self.turn_in_progress = True
 
     def turn_update(self):
         """Updates every frame to carry out a monster's turn during the action phase.
@@ -159,16 +239,14 @@ class Match():
         pass
 
 
-
-class CombatRouter():
-    """The CombatRouter receives inputs from the local player and sends
+class EventRouter():
+    """The EventRouter receives inputs from the local player and sends
     it to the local or network CombatEngine.
     """
-    def __init__(self, game, combat_engine):
+    def __init__(self, game):
         self.game = game
         self.state = None
-        self.combat_engine = combat_engine
-        self.events = {"event2": "1"}
+        self.events = {}
         self.responses = {}
         self.startup()
         self.cuuid = str(self.game.client.client.cuuid)
@@ -185,17 +263,29 @@ class CombatRouter():
         if self.game.ishost or self.game.isclient:
             self.game_type = "NETWORK"
         else:
-            self.route = self.combat_engine.route_combat
+            self.combat_route = self.game.combat_engine.route_combat
             self.game_type = "LOCAL"
 
         if not self.state:
             self.state = self.game.get_state_name("combat")
 
     def update(self):
-        pass
+        for euuid in self.events:
+            event_data = self.events[euuid]
+            self.combat_route(event_data)
+            del self.events[euuid]
+            return
 
-    def route_combat(self, event_data):
-        self.combat_engine.route_combat(event_data)
+        for euuid in self.responses:
+            cuuid = self.responses[euuid]["cuuid"]
+            event_data = self.responses[euuid]["event_data"]
+            self.handle_response(cuuid, event_data)
+            del self.responses[euuid]
+            return
+
+    def add_event(self, event_data):
+        euuid = str(uuid.uuid1())
+        self.events[euuid] = event_data
 
     def start_combat(self, params):
         # Add our players and setup combat
@@ -213,5 +303,4 @@ class CombatRouter():
 
     def handle_response(self, cuuid, event_data):
         if event_data["type"] == "NOTIFY_CLIENT_BATTLE_NEW":
-            print event_data["params"]
             self.start_combat(event_data["params"])

@@ -228,7 +228,7 @@ class Combat(object):
                               }
                     }
 
-        game.combat_router.route_combat(event_data)
+        game.event_router.add_event(event_data)
 
     def check_battle_legal(self, player):
         """Checks to see if the player has any monsters fit for battle.
