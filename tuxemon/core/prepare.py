@@ -134,7 +134,9 @@ def init():
 
     # Create an instance of the player and list of NPCs
     from .components import player
-    player1 = player.Player()
+    from .components import sprite
+    player_1 = player.Player()
+    player1 = sprite.Sprite(player_1)
 
     # Scale the sprite and its animations
     for key, animation in player1.sprite.items():

@@ -38,14 +38,48 @@ from core.components import player
 logger = logging.getLogger(__name__)
 
 class Combat(object):
-
     def start_battle(self, game, action):
+        # Don't start a battle if we or the opponent dont even have monsters yet.
+        if not self.check_battle_legal(game.player1):
+            return False
+        self.battle_init(game, action, "trainer")
+
+    def random_encounter(self, game, action):
+        # Don't start a battle if we or the opponent dont even have monsters yet.
+        if not self.check_battle_legal(game.player1):
+            return False
+        self.battle_init(game, action, "monster")
+
+    def start_duel(self, game, action):
+        # Don't start a battle if we or the opponent dont even have monsters yet.
+        if not self.check_battle_legal(game.player1):
+            return False
+        self.battle_init(game, action, "duel")
+
+    def battle_init(self, game, action, combat_type):
+
+        # Stop movement and keypress on the server.
+        #if game.isclient or game.ishost:
+        #        game.client.update_player(game.player1.facing, event_type="CLIENT_START_BATTLE")
+
+        # Stop the player's movement
+        #game.player1.moving = False
+        #game.player1.direction = {'down': False, 'left': False, 'right': False, 'up': False}
+
+        event_data={"type":"CLIENT_BATTLE_NEW",
+                    "combat_type": combat_type,
+                    "action": action
+                    }
+        game.client.send_event(event_data)
+
+
+    def s_start_battle(self, game, action):
         """Start a battle with a specific NPC. The parameters must contain an NPC id
         in the NPC database.
 
         :param game: The main game object that contains all the game's variables.
         :param action: The action (tuple) retrieved from the database that contains the action's
-            parameters
+            arameters
 
         :type game: core.control.Control
         :type action: Tuple
@@ -82,7 +116,7 @@ class Combat(object):
 
         self.battle_init(game, npc, "trainer", npc_party)
 
-    def random_encounter(self, game, action):
+    def s_rand_encounter(self, server, cuuid, action):
         """Randomly starts a battle with a monster defined in the "encounter" table in the
         "monster.db" database. The chance that this will start a battle depends on the
         "encounter_rate" specified in the database. The "encounter_rate" number is the chance
@@ -148,9 +182,12 @@ class Combat(object):
             # Set the NPC object's AI model.
             npc.ai = ai.AI()
 
-            self.battle_init(game, npc, "monster")
+            self.server_battle_init(server, "monster", cuuid, npc=npc )
 
-    def battle_init(self, game, npc, combat_type, npc_party=None):
+        else:
+            return False
+
+    def server_battle_init(self, server, combat_type, p1_cuuid, p2_cuuid=None, npc=None, npc_party=None):
         """Starts a battle and switches to the combat module.
 
         :param game: The main game object that contains all the game's variables.
@@ -164,7 +201,13 @@ class Combat(object):
         :rtype: None
         :returns: None
         """
-        player1 = game.player1
+        player1 = server.server.registry[p1_cuuid]["sprite"]
+        if p2_cuuid:
+            print p2_cuuid
+            player2 = server.server.registry[p2_cuuid]["sprite"]
+
+        if npc:
+            player2 = npc
 
         # Look up each monster in the NPC's party
         if npc_party:
@@ -205,30 +248,23 @@ class Combat(object):
                 current_monster.learn(pound)
 
                 # Add our monster to the NPC's party
-                npc.monsters.append(current_monster)
+                player2.monsters.append(current_monster)
 
         # Don't start a battle if we or the opponent dont even have monsters yet.
-        if not self.check_battle_legal(game.player1):
+        if not self.check_battle_legal(player1):
             return False
 
-        if not self.check_battle_legal(npc):
+        if not self.check_battle_legal(player2):
             return False
 
         # Stop movement and keypress on the server.
-        if game.isclient or game.ishost:
-                game.client.update_player(game.player1.facing, event_type="CLIENT_START_BATTLE")
 
         # Stop the player's movement
         player1.moving = False
         player1.direction = {'down': False, 'left': False, 'right': False, 'up': False}
 
-        event_data={"type":"CLIENT_BATTLE_NEW",
-                    "params": {'players': (player1, npc),
-                              'combat_type': combat_type
-                              }
-                    }
-
-        game.event_router.add_event(event_data)
+        params = (player1, player2)
+        return params
 
     def check_battle_legal(self, player):
         """Checks to see if the player has any monsters fit for battle.
@@ -241,6 +277,7 @@ class Combat(object):
         # Don't start a battle if we don't even have monsters in our party yet.
         if len(player.monsters) < 1:
             logger.warning("Cannot start battle, player has no monsters!")
+            print("no mons")
             return False
         else:
             if player.monsters[0].current_hp <= 0:

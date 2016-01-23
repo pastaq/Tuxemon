@@ -52,11 +52,6 @@ class Npc(object):
         ('create_npc', 'Oak,1,5,oak,wander', '1', 6)
 
         """
-        # Get a copy of the world state.
-        world = game.get_state_name("world")
-        if not world:
-            return
-
         # Get the npc's parameters from the action
         parameters = action[1].split(",")
         name = str(parameters[0])
@@ -72,19 +67,15 @@ class Npc(object):
         npc.tile_pos = [tile_pos_x, tile_pos_y]
         npc.behavior = behavior
         npc.ai = ai.AI()
-        npc.scale_sprites(world.scale)
-        npc.walkrate *= world.scale
-        npc.runrate *=world.scale
-        npc.moverate = npc.walkrate
+        #npc.scale_sprites(world.scale)
+        #npc.walkrate *= world.scale
+        #npc.runrate *=world.scale
+        #npc.moverate = npc.walkrate
 
         # Set the NPC's pixel position based on its tile position, tile size, and
         # current global_x/global_y variables
-        npc.position = [(tile_pos_x * world.tile_size[0]) + world.global_x,
-                        (tile_pos_y * world.tile_size[1]) + (world.global_y - world.tile_size[1])]
+        npc.position = [tile_pos_x, tile_pos_y ]
 
-
-        # Add the NPC to the game's NPC list
-        world.npcs.append(npc)
         return npc
 
     def pathfind(self, game, action):

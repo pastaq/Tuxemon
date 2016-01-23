@@ -29,6 +29,7 @@
 #
 """This module contains the Tuxemon server and client.
 """
+from core.components.combat import CombatEngine
 from core.components.middleware import Multiplayer, Controller
 from core import prepare
 
@@ -82,6 +83,7 @@ class TuxemonServer():
             return
 
         self.server = NeteriaServer(Multiplayer(self), server_port=40081, server_name=self.server_name)
+        self.combat_engine = CombatEngine(self)
 
     def update(self):
         """Updates the server state with information sent from the clients
@@ -107,6 +109,7 @@ class TuxemonServer():
 
             except KeyError:
                 self.server.registry[cuuid]["ping_timestamp"] = datetime.now()
+        self.combat_engine.update()
 
     def server_event_handler(self, cuuid, event_data):
         """Handles events sent from the middleware that are legal.
@@ -137,10 +140,15 @@ class TuxemonServer():
             self.server.registry[cuuid]["map_name"] = event_data["map_name"]
             self.server.registry[cuuid]["char_dict"] = event_data["char_dict"]
             self.server.registry[cuuid]["ping_timestamp"] = datetime.now()
+
+            sprite = populate_client(cuuid, event_data, self, self.server.registry)
             self.notify_populate_client(cuuid, event_data)
 
         elif event_data["type"] == "PING":
             self.server.registry[cuuid]["ping_timestamp"] = datetime.now()
+
+        elif "CLIENT_BATTLE_" in event_data["type"]:
+            self.combat_engine.route_combat(cuuid, event_data)
 
         elif event_data["type"] == "CLIENT_INTERACTION" or event_data["type"] == "CLIENT_RESPONSE":
             self.notify_client_interaction(cuuid, event_data)
@@ -617,24 +625,18 @@ class TuxemonClient():
         :returns: None
 
         """
-        if not event_type in self.event_list:
-            self.event_list[event_type] = 0
         pd = prepare.player1.__dict__
         map_name = self.game.get_map_name()
         event_data = {"type": event_type,
-                      "event_number": self.event_list[event_type],
                       "sprite_name": pd["sprite_name"],
                       "map_name": map_name,
                       "char_dict": {
                                   "tile_pos": pd["tile_pos"],
                                   "name": pd["name"],
                                   "facing": pd["facing"],
-                                  #"monsters": pd["monsters"],
-                                  #"inventory": pd["inventory"]
                                   }
                       }
-        self.event_list[event_type] +=1
-        self.client.event(event_data)
+        self.send_event(event_data)
         self.populated = True
 
 
@@ -652,19 +654,15 @@ class TuxemonClient():
         :returns: None
 
         """
-        if not event_type in self.event_list:
-            self.event_list[event_type] = 0
         pd = prepare.player1.__dict__
         map_name = self.game.get_map_name()
         event_data = {"type": event_type,
-                      "event_number": self.event_list[event_type],
                       "map_name": map_name,
                       "direction": direction,
                       "char_dict": {"tile_pos": pd["tile_pos"]
                                     }
                       }
-        self.event_list[event_type] +=1
-        self.client.event(event_data)
+        self.send_event(event_data)
 
 
     def set_key_condition(self, event):
@@ -723,26 +721,20 @@ class TuxemonClient():
         if kb_key == "up" or kb_key == "down" or kb_key == "left" or kb_key == "right":
             event_type = "CLIENT_FACING"
 
-        if not event_type in self.event_list:
-            self.event_list[event_type] = 0
 
         if event_type and kb_key:
             if event_type == "CLIENT_FACING":
                 if self.game.isclient or self.game.ishost:
                     event_data = {"type": event_type,
-                                  "event_number": self.event_list[event_type],
                                   "char_dict": {"facing": kb_key}
                                   }
-                    self.event_list[event_type] +=1
-                    self.client.event(event_data)
+                    self.send_event(event_data)
 
             elif event_type == "CLIENT_KEYUP" or event_type == "CLIENT_KEYDOWN":
                 event_data = {"type": event_type,
-                              "event_number": self.event_list[event_type],
                               "kb_key": kb_key
                               }
-                self.event_list[event_type] +=1
-                self.client.event(event_data)
+                self.send_event(event_data)
 
 
     def update_client_map(self, cuuid, event_data):
@@ -775,16 +767,14 @@ class TuxemonClient():
         :returns: None
 
         """
-        if not event_type in self.event_list:
-            self.event_list[event_type] = 1
         cuuid = None
 
         for client_id in self.client.registry:
-            if self.client.registry[client_id]["sprite"] == sprite: cuuid = client_id
+            if self.client.registry[client_id]["sprite"] == sprite:
+                cuuid = client_id
 
         pd = prepare.player1.__dict__
         event_data = {"type": event_type,
-                      "event_number": self.event_list[event_type],
                       "interaction": interaction,
                       "target": cuuid,
                       "response": response,
@@ -792,11 +782,7 @@ class TuxemonClient():
                                     "inventory": pd["inventory"]
                                     }
                       }
-        self.event_list[event_type] +=1
-        self.client.event(event_data)
-
-    def route_combat(self, event):
-        print(event)
+        self.send_event(event_data)
 
     def client_alive(self):
         """Sends server a ping to let it know that it is still alive.
@@ -806,15 +792,24 @@ class TuxemonClient():
         :returns: None
 
         """
-        event_type = "PING"
-        if not event_type in self.event_list:
+        event_data = {"type": "PING"}
+        self.send_event(event_data)
+
+    def send_event(self, event_data):
+        """Adds event sequence number to the event_data packet before sending it to the server.
+
+        :param: None
+        :rtype: None
+        :returns: None
+
+        """
+        event_type = event_data["type"]
+        if not event_data["type"] in self.event_list:
             self.event_list[event_type] = 1
-        else:
-            self.event_list[event_type] +=1
 
-        event_data = {"type": event_type,
-                      "event_number": self.event_list[event_type]}
-
+        event_data["event_number"] = self.event_list[event_type]
+        self.event_list[event_type] +=1
+    #    print(event_data)
         self.client.event(event_data)
 
 
@@ -857,22 +852,38 @@ def populate_client(cuuid, event_data, game, registry):
     """
     # TODO: move NPC from actions make make a common core class
     from core.components.event.actions.npc import Npc
-
     char_dict = event_data["char_dict"]
     sn = str(event_data["sprite_name"])
     nm = str(char_dict["name"])
     tile_pos_x = int(char_dict["tile_pos"][0])
     tile_pos_y = int(char_dict["tile_pos"][1])
 
-    sprite = Npc().create_npc(game,(None, str(nm)+","+str(tile_pos_x)+","+str(tile_pos_y)+","+str(sn)+",network"))
-    sprite.isplayer = True
-    sprite.final_move_dest = sprite.tile_pos
-    sprite.interactions = ["TRADE", "DUEL"]
+    plyr = Npc().create_npc(game,(None, str(nm)+","+str(tile_pos_x)+","+str(tile_pos_y)+","+str(sn)+",network"))
+    plyr.isplayer = True
+    plyr.final_move_dest = plyr.tile_pos
+    plyr.interactions = ["TRADE", "DUEL"]
 
-    registry[cuuid]["sprite"] = sprite
-    registry[cuuid]["map_name"] = event_data["map_name"]
+    # Get a copy of the world state.
+    npcsprite = None
+    world = None
+    try:
+        world = game.get_state_name("world")
+    except AttributeError:
+        print("Damn", game, registry)
 
-    return sprite
+    if world:
+
+        from core.components.sprite import NpcSprite
+        npcsprite = NpcSprite(plyr)
+        registry[cuuid]["sprite"] = npcsprite
+        registry[cuuid]["map_name"] = event_data["map_name"]
+        world.npcs.append(npcsprite)
+
+
+    if npcsprite:
+        return npcsprite
+    else:
+        return plyr
 
 
 def update_client(sprite, char_dict, game):

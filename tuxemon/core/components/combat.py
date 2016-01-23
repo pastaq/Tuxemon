@@ -31,41 +31,39 @@
 import logging
 import uuid
 from core import prepare
+from core.components.event.actions.combat import Combat
 
 logger = logging.getLogger(__name__)
 class CombatEngine():
     """The CombatEngine class manages the matches and returns results of
     actions to the local EventRouter or networked client.
     """
-    def __init__(self, game):
+    def __init__(self, server):
         self.matches = {}
-        self.game = game
-
-    def set_type(self):
-        try:
-            self.notify_route = self.game.event_router.handle_response
-            self.engine_type = "CLIENT"
-        except AttributeError:
-            self.notify_route = self.game.handle_combat_response
-            self.engine_type = "SERVER"
-        logger.info("Combat engine started as", self.engine_type)
-
+        self.server = server
+        self.combat = Combat()
     def update(self):
         for match in self.matches:
             match.update()
 
-    def add_new_match(self, cuuid, params):
-        self.matches[cuuid] = Match(params)
+    def route_combat(self, cuuid, event_data):
+        if event_data["type"] == "CLIENT_BATTLE_NEW":
+            self.add_new_match(cuuid, event_data)
 
-    def route_combat(self, event, cuuid=None):
-        if not cuuid:
-            self.cuuid = str(self.game.client.client.cuuid)
+    def add_new_match(self, cuuid, event_data):
+        print(event_data)
+        params = None
+        if event_data["combat_type"] == "monster":
+            params = self.combat.s_rand_encounter(self.server,
+                                                         cuuid,
+                                                         event_data["action"]
+                                                         )
+        if params:
+            print(params)
+            self.matches[cuuid] = Match(params)
+        else:
+            return False
 
-        if event["type"] == "CLIENT_BATTLE_NEW":
-            self.add_new_match(cuuid, event["params"])
-            event_data={"type":"NOTIFY_CLIENT_BATTLE_NEW",
-                        "params": event["params"]}
-            self.notify_route(cuuid, event_data)
 
 class Match():
     """The Match class executes as a single match between opponents.
@@ -168,7 +166,7 @@ class Match():
             self.turn_order.append(players['player1'])
 
     def action_phase_update(self):
-        """Updates the game every frame during the action phase.
+        """Updates the server every frame during the action phase.
         """
         # If we're in the action phase, but an action is not actively being carried out, start
         # the next player's action.
@@ -239,68 +237,3 @@ class Match():
         pass
 
 
-class EventRouter():
-    """The EventRouter receives inputs from the local player and sends
-    it to the local or network CombatEngine.
-    """
-    def __init__(self, game):
-        self.game = game
-        self.state = None
-        self.events = {}
-        self.responses = {}
-        self.startup()
-        self.cuuid = str(self.game.client.client.cuuid)
-        self.game_type = ""
-
-        # Import the android mixer if on the android platform
-        try:
-            import pygame.mixer as mixer
-        except ImportError:
-            import android.mixer as mixer
-        self.mixer = mixer
-
-    def startup(self):
-        if self.game.ishost or self.game.isclient:
-            self.game_type = "NETWORK"
-        else:
-            self.combat_route = self.game.combat_engine.route_combat
-            self.game_type = "LOCAL"
-
-        if not self.state:
-            self.state = self.game.get_state_name("combat")
-
-    def update(self):
-        for euuid in self.events:
-            event_data = self.events[euuid]
-            self.combat_route(event_data)
-            del self.events[euuid]
-            return
-
-        for euuid in self.responses:
-            cuuid = self.responses[euuid]["cuuid"]
-            event_data = self.responses[euuid]["event_data"]
-            self.handle_response(cuuid, event_data)
-            del self.responses[euuid]
-            return
-
-    def add_event(self, event_data):
-        euuid = str(uuid.uuid1())
-        self.events[euuid] = event_data
-
-    def start_combat(self, params):
-        # Add our players and setup combat
-        self.game.push_state("COMBAT", params)
-
-        # flash the screen
-        self.game.push_state("FLASH_TRANSITION")
-
-        # Start some music!
-        logger.info("Playing battle music!")
-        filename = "147066_pokemon.ogg"
-
-        self.mixer.music.load(prepare.BASEDIR + "resources/music/" + filename)
-        self.mixer.music.play(-1)
-
-    def handle_response(self, cuuid, event_data):
-        if event_data["type"] == "NOTIFY_CLIENT_BATTLE_NEW":
-            self.start_combat(event_data["params"])
