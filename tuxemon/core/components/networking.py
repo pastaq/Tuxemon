@@ -47,10 +47,10 @@ try:
     from neteria.server import NeteriaServer
     from neteria.client import NeteriaClient
     networking = True
+    logger.info("components.networking successfully loaded")
 except ImportError:
-    logger.info("Neteria networking unavailable")
+    logger.info("Neteria networking unavailable, using dummy networking.")
     networking = False
-
 
 class TuxemonServer():
     """Server class for multiplayer games. Creates a netaria server and
@@ -136,12 +136,29 @@ class TuxemonServer():
             self.server.registry[cuuid]["event_list"][event_data["type"]] = event_data["event_number"]
 
         if event_data["type"] == "PUSH_SELF":
+            # TODO: Make server the explicit owner of character data and "push"
+            # this to the client, rather than accepting what the client says to
+            # be true.
+            populate_client(cuuid, event_data, self, self.server.registry)
+            sprite = self.server.registry[cuuid]["sprite"]
+            update_client(sprite, event_data["char_dict"], self)
+
+            from core.components.event.actions.player import Player as PlayerAction
+            add_objects = PlayerAction()
+            for add in event_data["add_list"]:
+                try:
+                    addit = getattr(add_objects, add[0])
+                    addit(self, add, sprite)
+                except AttributeError:
+                    logger.warning("<%s> is attempting to run a function, %s, that does not exist! What a douche."\
+                                   % (cuuid, add[0]))
+
+            # Below are legacy and need to be replaced by direct reference to
+            # the 'sprite' key. Currntly remain for compatibility.
             self.server.registry[cuuid]["sprite_name"] = event_data["sprite_name"]
             self.server.registry[cuuid]["map_name"] = event_data["map_name"]
             self.server.registry[cuuid]["char_dict"] = event_data["char_dict"]
             self.server.registry[cuuid]["ping_timestamp"] = datetime.now()
-
-            sprite = populate_client(cuuid, event_data, self, self.server.registry)
             self.notify_populate_client(cuuid, event_data)
 
         elif event_data["type"] == "PING":
@@ -626,6 +643,19 @@ class TuxemonClient():
 
         """
         pd = prepare.player1.__dict__
+        monsters = pd["monsters"]
+        add_list = []
+        for monster in monsters:
+            mn = monster.__dict__
+            mons = ('add_monster', str(mn['name'])+","+ str(mn['level']))
+            add_list.append(mons)
+
+        inventory = pd["inventory"]
+        for ii in inventory:
+            for _ in range(inventory[ii]['quantity']):
+                item = ('add_item', ii)
+                add_list.append(item)
+
         map_name = self.game.get_map_name()
         event_data = {"type": event_type,
                       "sprite_name": pd["sprite_name"],
@@ -634,7 +664,9 @@ class TuxemonClient():
                                   "tile_pos": pd["tile_pos"],
                                   "name": pd["name"],
                                   "facing": pd["facing"],
-                                  }
+                                  },
+
+                      "add_list": add_list
                       }
         self.send_event(event_data)
         self.populated = True
@@ -858,7 +890,7 @@ def populate_client(cuuid, event_data, game, registry):
     tile_pos_x = int(char_dict["tile_pos"][0])
     tile_pos_y = int(char_dict["tile_pos"][1])
 
-    plyr = Npc().create_npc(game,(None, str(nm)+","+str(tile_pos_x)+","+str(tile_pos_y)+","+str(sn)+",network"))
+    plyr = Npc().create_npc(game,(None, str(nm)+","+str(tile_pos_x)+","+str(tile_pos_y)+","+str(sn)+",network"),"PseudoAI")
     plyr.isplayer = True
     plyr.final_move_dest = plyr.tile_pos
     plyr.interactions = ["TRADE", "DUEL"]
@@ -869,7 +901,7 @@ def populate_client(cuuid, event_data, game, registry):
     try:
         world = game.get_state_name("world")
     except AttributeError:
-        print("Damn", game, registry)
+        logger.debug("Unable to load world state", game, registry)
 
     if world:
 
@@ -878,7 +910,8 @@ def populate_client(cuuid, event_data, game, registry):
         registry[cuuid]["sprite"] = npcsprite
         registry[cuuid]["map_name"] = event_data["map_name"]
         world.npcs.append(npcsprite)
-
+    else:
+        registry[cuuid]["sprite"] = plyr
 
     if npcsprite:
         return npcsprite
@@ -901,15 +934,16 @@ def update_client(sprite, char_dict, game):
     :returns: None
 
     """
-    world = game.get_state_name("world")
-    if not world:
-        return
+    try:
+        world = game.get_state_name("world")
+    except AttributeError:
+        world = None
 
     for item in char_dict:
         sprite.__dict__[item] = char_dict[item]
 
         # Get the pixel position of our tile position.
-        if item == "tile_pos":
+        if item == "tile_pos" and world:
             tile_size = prepare.TILE_SIZE
             position = [char_dict["tile_pos"][0] * tile_size[0],
                         char_dict["tile_pos"][1] * tile_size[1]

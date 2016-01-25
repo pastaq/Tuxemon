@@ -876,7 +876,7 @@ class COMBAT(state.State):
             self.status_check_completed = False
 
         self.turn_in_progress = True
-
+        logger.debug("Turn currently in progress")
 
     def turn_update(self):
         """Updates every frame to carry out a monster's turn during the action phase.

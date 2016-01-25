@@ -31,7 +31,7 @@ from core.components import player
 
 class Npc(object):
 
-    def create_npc(self, game, action):
+    def create_npc(self, game, action, arint="AI"):
         """Creates an NPC object and adds it to the game's current list of NPC's.
 
         :param game: The main game object that contains all the game's variables.
@@ -66,7 +66,10 @@ class Npc(object):
         # Set the NPC object's variables
         npc.tile_pos = [tile_pos_x, tile_pos_y]
         npc.behavior = behavior
-        npc.ai = ai.AI()
+        if arint == "AI":
+            npc.ai = ai.AI()
+        elif arint == "PseudoAI":
+            npc.ai = ai.PseudoAI(npc)
         #npc.scale_sprites(world.scale)
         #npc.walkrate *= world.scale
         #npc.runrate *=world.scale

@@ -168,7 +168,7 @@ class Player(object):
         self.teleport(game, action)
 
 
-    def add_monster(self, game, action):
+    def add_monster(self, game, action, player=None):
         """Adds a monster to the current player's party if there is room. The action parameter
         must contain a monster name to look up in the monster database.
 
@@ -222,6 +222,9 @@ class Player(object):
         ... [<core.components.monster.Monster instance at 0x2d0b3b0>]
 
         """
+        if not player:
+            player = game.player1
+
         parameters = action[1].split(",")
         monster_name = parameters[0]
         monster_level = parameters[1]
@@ -229,10 +232,10 @@ class Player(object):
         current_monster.load_from_db(monster_name)
         current_monster.set_level(int(monster_level))
 
-        game.player1.add_monster(current_monster)
+        player.add_monster(current_monster)
 
 
-    def add_item(self, game, action):
+    def add_item(self, game, action, player=None):
         """Adds an item to the current player's inventory. The action parameter must contain an
         item name to look up in the item database.
 
@@ -254,7 +257,8 @@ class Player(object):
         >>>
 
         """
-        player = game.player1
+        if not player:
+            player = game.player1
         item_to_add = item.Item(action[1])
 
         # If the item already exists in the player's inventory, add to its quantity, otherwise
