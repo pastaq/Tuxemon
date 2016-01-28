@@ -56,6 +56,7 @@ class Combat(object):
                     "combat_type": combat_type,
                     "action": action
                     }
+        print("event_data", event_data)
         game.client.send_event(event_data)
 
 
@@ -65,7 +66,7 @@ class Combat(object):
 
         :param game: The main game object that contains all the game's variables.
         :param action: The action (tuple) retrieved from the database that contains the action's
-            arameters
+            parameters
 
         :type game: core.control.Control
         :type action: Tuple
@@ -77,11 +78,16 @@ class Combat(object):
 
         **Examples:**
 
-        >>> action
-        ... (u'start_battle', u'1', 1, 9)
+        >>> action.__dict__
+        {
+            "type": "start_battle",
+            "parameters": [
+                "1"
+            ]
+        }
 
         """
-        npc_id = int(action[1])
+        npc_id = int(action.parameters[0])
 
         # Create an NPC object that will be used as our opponent
         npc = player.Npc()
@@ -121,8 +127,9 @@ class Combat(object):
         Valid Parameters: encounter_id
 
         """
+        print("action", action)
         # Get the parameters to determine what encounter group we'll look up in the database.
-        encounter_id = int(action[1])
+        encounter_id = int(action.parameters[0])
 
         # Look up the encounter details
         monsters = db.JSONDatabase()
@@ -257,15 +264,13 @@ class Combat(object):
         :rtype: Bool
         :returns: True/False
         """
+        # Don't start a battle if we don't even have monsters in our party yet.
         if len(player.monsters) < 1:
             logger.warning("Cannot start battle, player has no monsters!")
-            print("no mons")
             return False
         else:
             if player.monsters[0].current_hp <= 0:
                 logger.warning("Cannot start battle, player's monsters are all DEAD")
-                print("NO HP DUDE!")
                 return False
-            else:
-                print("BATTLE LEGAL!")
-                return True
+            else: return True
+

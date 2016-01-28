@@ -48,17 +48,25 @@ class Npc(object):
 
         **Examples:**
 
-        >>> action
-        ('create_npc', 'Oak,1,5,oak,wander', '1', 6)
+        >>> action.__dict__
+        {
+            "type": "create_npc",
+            "parameters": [
+                "Oak",
+                "1",
+                "5",
+                "oak",
+                "wander"
+            ]
+        }
 
         """
         # Get the npc's parameters from the action
-        parameters = action[1].split(",")
-        name = str(parameters[0])
-        tile_pos_x = int(parameters[1])
-        tile_pos_y = int(parameters[2])
-        animations = str(parameters[3])
-        behavior = str(parameters[4])
+        name = str(action.parameters[0])
+        tile_pos_x = int(action.parameters[1])
+        tile_pos_y = int(action.parameters[2])
+        animations = str(action.parameters[3])
+        behavior = str(action.parameters[4])
 
         # Create a new NPC object
         npc = player.Npc(sprite_name=animations, name=name)
@@ -81,20 +89,60 @@ class Npc(object):
 
         return npc
 
+    def remove_npc(self, game, action):
+        """Removes an NPC object from the list of NPCs.
+
+        :param game: The main game object that contains all the game's variables.
+        :param action: The action (tuple) retrieved from the database that contains the action's
+            parameters
+
+        :type game: core.control.Control
+        :type action: Tuple
+
+        :rtype: None
+        :returns: None
+
+        Valid Parameters: name
+
+        **Examples:**
+
+        >>> action.__dict__
+        {
+            "type": "remove_npc",
+            "parameters": [
+                "Oak"
+            ]
+        }
+
+        """
+        # Get a copy of the world state.
+        world = game.get_state_name("world")
+        if not world:
+            return
+
+        # Get the npc's parameters from the action
+        name = str(action.parameters[0])
+
+        # Create a separate list of NPCs to loop through
+        npcs = list(world.npcs)
+
+        # Remove the NPC from our list of NPCs
+        for npc in npcs:
+            if npc.name == name and not npc.isplayer:
+                world.npcs.remove(npc)
+
     def pathfind(self, game, action):
         '''
         Will move the player / npc to the given location
         '''
         # Get a copy of the world state.
-        world = game.get_world_state()
+        world = game.get_state_name("world")
         if not world:
             return
 
-        print("action is " + str(action))
-        parameters = action[1].split(",")
-        npc_name = parameters[0]
-        dest_x = parameters[1]
-        dest_y = parameters[2]
+        npc_name = action.parameters[0]
+        dest_x = action.parameters[1]
+        dest_y = action.parameters[2]
 
         # get npc object via name
         curr_npc = None
@@ -104,4 +152,3 @@ class Npc(object):
                 print("found npc: " +npc_name)
 
         curr_npc.pathfind((int(dest_x),int(dest_y)), game)
-

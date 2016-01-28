@@ -29,6 +29,9 @@
 #
 
 import logging
+
+from collections import namedtuple
+
 from core.components.event.actions.combat import Combat
 
 logger = logging.getLogger(__name__)
@@ -45,7 +48,6 @@ class CombatEngine():
 
     def update(self):
         for match in self.matches.keys():
-            print self.matches
             current_match = self.matches[match]
             if current_match.combat_over:
                 winner = current_match.winner
@@ -62,10 +64,13 @@ class CombatEngine():
 
     def add_new_match(self, cuuid, event_data):
         params = None
+        Action = namedtuple("action", ["type", "parameters"])
+        action = Action(event_data["action"][0], event_data["action"][1])
         if event_data["combat_type"] == "monster":
+
             params = self.combat.s_rand_encounter(self.server,
                                                   cuuid,
-                                                  event_data["action"]
+                                                  action
                                                   )
 
         if params:

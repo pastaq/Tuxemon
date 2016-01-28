@@ -559,7 +559,7 @@ class Player():
 
     def get_adjacent_tiles(self, curr_loc, game):
         # Get a copy of the world state.
-        world = game.get_world_state()
+        world = game.get_state_name("world")
         if not world:
             return
         blocked_directions = self.collision_check(curr_loc, world.collision_map, world.collision_lines_map)

@@ -33,6 +33,8 @@ as display resolution, scale, etc.
 """
 
 import os
+import shutil
+from os.path import expanduser
 import pygame as pg
 
 from .components import config
@@ -49,9 +51,25 @@ BASEDIR = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__
 if "library.zip" in BASEDIR:
     BASEDIR = os.path.abspath(os.path.join(BASEDIR, "..")) + os.sep
 
+# Set up our config directory
+CONFIG_PATH = expanduser("~") + "/.tuxemon/"
+try:
+    os.makedirs(CONFIG_PATH)
+except OSError:
+    if not os.path.isdir(CONFIG_PATH):
+        raise
+
+# Create a copy of our default config if one does not exist in the home dir.
+CONFIG_FILE_PATH = CONFIG_PATH + "tuxemon.cfg"
+if not os.path.isfile(CONFIG_FILE_PATH):
+    try:
+        shutil.copyfile(BASEDIR + "tuxemon.cfg", CONFIG_FILE_PATH)
+    except OSError:
+        raise
+
 # Read the "tuxemon.cfg" configuration file
-CONFIG = config.Config(BASEDIR + "tuxemon.cfg")
-HEADLESSCONFIG = config.HeadlessConfig(BASEDIR + "tuxemon.cfg")
+CONFIG = config.Config(CONFIG_FILE_PATH)
+HEADLESSCONFIG = config.HeadlessConfig(CONFIG_FILE_PATH)
 
 # Set up the screen size and caption
 SCREEN_SIZE = CONFIG.resolution
@@ -81,6 +99,13 @@ if CONFIG.scaling == "1":
 else:
     SCALE = 1
 
+# Set up the saves directory
+try:
+    os.makedirs(CONFIG_PATH + "saves/")
+except OSError:
+    if not os.path.isdir(CONFIG_PATH + "saves/"):
+        raise
+SAVE_PATH = CONFIG_PATH + "saves/slot"
 
 # Initialization of PyGame dependent systems.
 def init():

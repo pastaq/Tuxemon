@@ -34,6 +34,7 @@ from core.components.middleware import Multiplayer, Controller
 from core import prepare
 
 from datetime import datetime
+from collections import namedtuple
 
 import pprint
 import pygame as pg
@@ -146,12 +147,14 @@ class TuxemonServer():
             from core.components.event.actions.player import Player as PlayerAction
             add_objects = PlayerAction()
             for add in event_data["add_list"]:
-                try:
-                    addit = getattr(add_objects, add[0])
-                    addit(self, add, sprite)
-                except AttributeError:
-                    logger.warning("<%s> is attempting to run a function, %s, that does not exist! What a douche."\
-                                   % (cuuid, add[0]))
+                #try:
+                Action = namedtuple("action", ["type", "parameters"])
+                action = Action(add[0], add[1])
+                addit = getattr(add_objects, add[0])
+                addit(self, action, sprite)
+                #except AttributeError:
+                    #logger.warning("<%s> is attempting to run a function, %s, that does not exist! What a douche."\
+                                #   % (cuuid, add[0]))
 
             # Below are legacy and need to be replaced by direct reference to
             # the 'sprite' key. Currntly remain for compatibility.
@@ -647,13 +650,13 @@ class TuxemonClient():
         add_list = []
         for monster in monsters:
             mn = monster.__dict__
-            mons = ('add_monster', str(mn['name'])+","+ str(mn['level']))
+            mons = ('add_monster', [str(mn['name']), str(mn['level'])])
             add_list.append(mons)
 
         inventory = pd["inventory"]
         for ii in inventory:
             for _ in range(inventory[ii]['quantity']):
-                item = ('add_item', ii)
+                item = ('add_item', [ii])
                 add_list.append(item)
 
         map_name = self.game.get_map_name()
@@ -841,7 +844,6 @@ class TuxemonClient():
 
         event_data["event_number"] = self.event_list[event_type]
         self.event_list[event_type] +=1
-    #    print(event_data)
         self.client.event(event_data)
 
 
@@ -889,8 +891,12 @@ def populate_client(cuuid, event_data, game, registry):
     nm = str(char_dict["name"])
     tile_pos_x = int(char_dict["tile_pos"][0])
     tile_pos_y = int(char_dict["tile_pos"][1])
+    action_type = "create_npc"
+    params = [nm, tile_pos_x, tile_pos_y, sn, "network"]
+    Action = namedtuple("action", ["type", "parameters"])
+    action = Action(action_type, params)
 
-    plyr = Npc().create_npc(game,(None, str(nm)+","+str(tile_pos_x)+","+str(tile_pos_y)+","+str(sn)+",network"),"PseudoAI")
+    plyr = Npc().create_npc(game, action, "PseudoAI")
     plyr.isplayer = True
     plyr.final_move_dest = plyr.tile_pos
     plyr.interactions = ["TRADE", "DUEL"]
